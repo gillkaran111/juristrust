@@ -115,4 +115,6 @@ Deploy the smart contract to Stellar's Soroban network and interact with it usin
 
 ---
 
-**Stellar Notes DApp** - Securing Your Thoughts on the Blockchain
+##contract
+CDTHXZP2J4KE2CAL3QYYDI5IW4ZSY2Y3WWZO6UPYATHUGYTTF3S45AGF
+CDTHXZP2J4KE2CAL3QYYDI5IW4ZSY2Y3WWZO6UPYATHUGYTTF3S45AGF
