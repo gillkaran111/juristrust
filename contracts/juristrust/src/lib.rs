@@ -1,67 +1,68 @@
-
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
 
-// Struktur data yang akan menyimpan notes
 #[contracttype]
-#[derive(Clone, Debug)]
-pub struct Note {
-    id: u64,
-    title: String,
-    content: String,
+#[derive(Clone)]
+pub enum DataKey {
+    Firm,        // The managing Law Firm
+    PartyA,      // Attorney for Side A
+    PartyB,      // Attorney for Side B
+    Receiver,    // Final recipient of funds
+    Asset,       // USDC/Asset address
+    Amount,      // Total escrow amount
+    ApprA,       // Approval status from Party A
+    ApprB,       // Approval status from Party B
 }
-
-// Storage key untuk data notes
-const NOTE_DATA: Symbol = symbol_short!("NOTE_DATA");
 
 #[contract]
-pub struct NotesContract;
+pub struct JurisTrustContract;
 
 #[contractimpl]
-impl NotesContract {
-    pub fn get_notes(env: Env) -> Vec<Note> {
-        // 1. ambil data notes dari storage
-        return env.storage().instance().get(&NOTE_DATA).unwrap_or(Vec::new(&env));
+impl JurisTrustContract {
+    // Initialize the escrow with the legal parties and the amount to be held
+    pub fn initialize(env: Env, firm: Address, a: Address, b: Address, receiver: Address, asset: Address, amount: i128) {
+        if env.storage().instance().has(&DataKey::Firm) { panic!("Already initialized"); }
+        
+        env.storage().instance().set(&DataKey::Firm, &firm);
+        env.storage().instance().set(&DataKey::PartyA, &a);
+        env.storage().instance().set(&DataKey::PartyB, &b);
+        env.storage().instance().set(&DataKey::Receiver, &receiver);
+        env.storage().instance().set(&DataKey::Asset, &asset);
+        env.storage().instance().set(&DataKey::Amount, &amount);
+        env.storage().instance().set(&DataKey::ApprA, &false);
+        env.storage().instance().set(&DataKey::ApprB, &false);
     }
 
-    // Fungsi untuk membuat note baru
-    pub fn create_note(env: Env, title: String, content: String) -> String {
-        // 1. ambil data notes dari storage
-        let mut notes: Vec<Note> = env.storage().instance().get(&NOTE_DATA).unwrap_or(Vec::new(&env));
-        
-        // 2. Buat object note baru
-        let note = Note {
-            id: env.prng().gen::<u64>(),
-            title: title,
-            content: content,
-        };
-        
-        // 3. tambahkan note baru ke notes lama
-        notes.push_back(note);
-        
-        // 4. simpan notes ke storage
-        env.storage().instance().set(&NOTE_DATA, &notes);
-        
-        return String::from_str(&env, "Notes berhasil ditambahkan");
+    // Party A signs off on the release
+    pub fn approve_a(env: Env, caller: Address) {
+        let party_a: Address = env.storage().instance().get(&DataKey::PartyA).unwrap();
+        if caller != party_a { panic!("Unauthorized"); }
+        caller.require_auth();
+        env.storage().instance().set(&DataKey::ApprA, &true);
+        self::check_and_release(env);
     }
 
-    // Fungsi untuk menghapus notes berdasarkan id
-    pub fn delete_note(env: Env, id: u64) -> String {
-        // 1. ambil data notes dari storage 
-        let mut notes: Vec<Note> = env.storage().instance().get(&NOTE_DATA).unwrap_or(Vec::new(&env));
-
-        // 2. cari index note yang akan dihapus menggunakan perulangan
-        for i in 0..notes.len() {
-            if notes.get(i).unwrap().id == id {
-                notes.remove(i);
-
-                env.storage().instance().set(&NOTE_DATA, &notes);
-                return String::from_str(&env, "Berhasil hapus notes");
-            }
-        }
-
-        return String::from_str(&env, "Notes tidak ditemukan")
+    // Party B signs off on the release
+    pub fn approve_b(env: Env, caller: Address) {
+        let party_b: Address = env.storage().instance().get(&DataKey::PartyB).unwrap();
+        if caller != party_b { panic!("Unauthorized"); }
+        caller.require_auth();
+        env.storage().instance().set(&DataKey::ApprB, &true);
+        self::check_and_release(env);
     }
 }
 
-mod test;
+// Internal function to check if both parties have signed and release funds
+fn check_and_release(env: Env) {
+    let a: bool = env.storage().instance().get(&DataKey::ApprA).unwrap();
+    let b: bool = env.storage().instance().get(&DataKey::ApprB).unwrap();
+
+    if a && b {
+        let asset_addr: Address = env.storage().instance().get(&DataKey::Asset).unwrap();
+        let receiver: Address = env.storage().instance().get(&DataKey::Receiver).unwrap();
+        let amount: i128 = env.storage().instance().get(&DataKey::Amount).unwrap();
+        
+        let client = token::Client::new(&env, &asset_addr);
+        client.transfer(&env.current_contract_address(), &receiver, &amount);
+    }
+}
